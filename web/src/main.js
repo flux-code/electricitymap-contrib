@@ -157,11 +157,6 @@ let theme = themes.bright;
 
 const windColorbar = new HorizontalColorbar('.wind-potential-bar', scales.windColor)
   .markerColor('black');
-const solarColorbarColor = d3.scaleLinear()
-  .domain([0, 0.5 * scales.maxSolarDSWRF, scales.maxSolarDSWRF])
-  .range(['black', 'white', 'gold']);
-const solarColorbar = new HorizontalColorbar('.solar-potential-bar', solarColorbarColor)
-  .markerColor('red');
 
 // Initialise mobile app (cordova)
 const app = {
@@ -308,7 +303,7 @@ try {
         .onExchangeMouseMove((zoneData) => {
           const { co2intensity } = zoneData;
           if (co2intensity) {
-            dispatch({ type: 'SET_CO2_COLORBAR_MARKER', payload: { marker: co2intensity } });
+            dispatchApplication('co2ColorbarMarker', co2intensity);
           }
           dispatch({
             type: 'SHOW_TOOLTIP',
@@ -320,7 +315,7 @@ try {
           });
         })
         .onExchangeMouseOut((d) => {
-          dispatch({ type: 'UNSET_CO2_COLORBAR_MARKER' });
+          dispatchApplication('co2ColorbarMarker', null);
           dispatch({ type: 'HIDE_TOOLTIP' });
         })
         .onExchangeClick((d) => {
@@ -380,12 +375,13 @@ function mapMouseOver(lonlat) {
     const now = getState().application.customDate
       ? moment(getState().application.customDate) : (new Date()).getTime();
     if (!solarLayer.isExpired(now, solar.forecasts[0], solar.forecasts[1])) {
-      const val = grib.getInterpolatedValueAtLonLat(lonlat,
-        now, solar.forecasts[0], solar.forecasts[1]);
-      solarColorbar.currentMarker(val);
+      dispatchApplication(
+        'solarColorbarMarker',
+        grib.getInterpolatedValueAtLonLat(lonlat, now, solar.forecasts[0], solar.forecasts[1])
+      );
     }
   } else {
-    solarColorbar.currentMarker(undefined);
+    dispatchApplication('solarColorbarMarker', null);
   }
 }
 
@@ -509,14 +505,12 @@ function dataLoaded(err, clientVersion, callerLocation, callerZone, state, argSo
         mapMouseOver(lonlat);
       })
       .onZoneMouseMove((zoneData, i, clientX, clientY) => {
-        dispatch({
-          type: 'SET_CO2_COLORBAR_MARKER',
-          payload: {
-            marker: getState().application.electricityMixMode === 'consumption'
-              ? zoneData.co2intensity
-              : zoneData.co2intensityProduction,
-          },
-        });
+        dispatchApplication(
+          'co2ColorbarMarker',
+          getState().application.electricityMixMode === 'consumption'
+            ? zoneData.co2intensity
+            : zoneData.co2intensityProduction
+        );
         dispatch({
           type: 'SHOW_TOOLTIP',
           payload: {
@@ -530,7 +524,7 @@ function dataLoaded(err, clientVersion, callerLocation, callerZone, state, argSo
         });
       })
       .onZoneMouseOut(() => {
-        dispatch({ type: 'UNSET_CO2_COLORBAR_MARKER' });
+        dispatchApplication('co2ColorbarMarker', null);
         dispatch({ type: 'HIDE_TOOLTIP' });
         mapMouseOver(undefined);
       });
@@ -794,13 +788,11 @@ function routeToPage(pageName, state) {
     if (state.application.windEnabled && typeof windLayer !== 'undefined') { windLayer.show(); }
     if (state.application.solarEnabled && typeof solarLayer !== 'undefined') { solarLayer.show(); }
     if (state.application.windEnabled && windColorbar) windColorbar.render();
-    if (state.application.solarEnabled && solarColorbar) solarColorbar.render();
   } else {
     d3.select('.left-panel').classed('small-screen-hidden', false);
     d3.selectAll(`.left-panel-${pageName}`).style('display', undefined);
     if (pageName === 'info') {
       if (state.application.windEnabled) if (windColorbar) windColorbar.render();
-      if (state.application.solarEnabled) if (solarColorbar) solarColorbar.render();
     }
   }
 
@@ -961,7 +953,6 @@ observe(state => state.application.brightModeEnabled, (brightModeEnabled) => {
 // Observe for solar settings change
 observe(state => state.application.solarEnabled, (solarEnabled, state) => {
   d3.selectAll('.solar-button').classed('active', solarEnabled);
-  d3.select('.solar-potential-legend').classed('visible', solarEnabled);
   saveKey('solarEnabled', solarEnabled);
 
   solarLayerButtonTooltip.select('.tooltip-text').text(translation.translate(solarEnabled ? 'tooltips.hideSolarLayer' : 'tooltips.showSolarLayer'));
@@ -969,7 +960,6 @@ observe(state => state.application.solarEnabled, (solarEnabled, state) => {
   const now = state.customDate
     ? moment(state.customDate) : (new Date()).getTime();
   if (solarEnabled && typeof solarLayer !== 'undefined') {
-    solarColorbar.render();
     if (!solar || solarLayer.isExpired(now, solar.forecasts[0], solar.forecasts[1])) {
       fetch(true);
     } else {
